@@ -19,8 +19,10 @@ class VirusTotalClient:
         """Respect VirusTotal rate limits"""
         current_time = time.time()
         time_since_last = current_time - self.last_request_time
+
         if time_since_last < self.rate_limit_delay:
             time.sleep(self.rate_limit_delay - time_since_last)
+            
         self.last_request_time = time.time()
     
     def get_domain_report(self, domain: str) -> Optional[Dict[str, Any]]:
@@ -29,7 +31,7 @@ class VirusTotalClient:
         url = f"{self.base_url}/domains/{domain}"
         print(f"Fetching domain report for {domain} from VirusTotal")
         try:
-            response = requests.get(url, headers=self.headers)
+            response = requests.get(url, headers=self.headers, timeout=30)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -42,7 +44,7 @@ class VirusTotalClient:
         url = f"{self.base_url}/ip_addresses/{ip}"
         print(f"Fetching IP report for {ip} from VirusTotal")
         try:
-            response = requests.get(url, headers=self.headers)
+            response = requests.get(url, headers=self.headers, timeout=30)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -55,7 +57,7 @@ class VirusTotalClient:
         url = f"{self.base_url}/files/{file_hash}"
         print(f"Fetching file report for {file_hash} from VirusTotal")
         try:
-            response = requests.get(url, headers=self.headers)
+            response = requests.get(url, headers=self.headers, timeout=30)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:

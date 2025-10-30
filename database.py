@@ -1,32 +1,77 @@
-from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import ASCENDING
 import os
 from dotenv import load_dotenv
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, String, DateTime, Integer ,Boolean
+from sqlalchemy.sql import func
+import uuid
 
 load_dotenv()
 
-class MongoDB:
-    client: AsyncIOMotorClient = None
-    database = None
+Base = declarative_base()
 
-mongodb = MongoDB()
-
-async def connect_to_mongo():
-    """Connect to MongoDB"""
-    mongo_url = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
-    mongodb.client = AsyncIOMotorClient(mongo_url)
-    mongodb.database = mongodb.client.Testdb
+# Domain Reports Table
+class DomainReport(Base):
+    __tablename__ = "domain_reports"
     
-    # Create indexes
-    await mongodb.database.reports.create_index([("resource_id", ASCENDING), ("resource_type", ASCENDING)])
-    await mongodb.database.reports.create_index([("cache_until", ASCENDING)])
-    await mongodb.database.checkpoints.create_index([("checkpoint_name", ASCENDING)])
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    domain = Column(String(255), nullable=False, index=True)
+    malicious = Column(Integer, default=0)
+    suspicious = Column(Integer, default=0)
+    undetected = Column(Integer, default=0)
+    harmless = Column(Integer, default=0)
+    created_at = Column(DateTime, default=func.now())
+
+# IP Reports Table
+class IPReport(Base):
+    __tablename__ = "ip_reports"
     
-    print("Connected to MongoDB successfully!")
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    ip_address = Column(String(45), nullable=False, index=True)
+    malicious = Column(Integer, default=0)
+    suspicious = Column(Integer, default=0)
+    undetected = Column(Integer, default=0)
+    harmless = Column(Integer, default=0)
+    created_at = Column(DateTime, default=func.now())
 
-async def close_mongo_connection():
-    """Close MongoDB connection"""
-    mongodb.client.close()
+# Hash Reports Table
+class HashReport(Base):
+    __tablename__ = "hash_reports"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    file_hash = Column(String(64), nullable=False, index=True)
+    malicious = Column(Integer, default=0)
+    suspicious = Column(Integer, default=0)
+    undetected = Column(Integer, default=0)
+    harmless = Column(Integer, default=0)
+    created_at = Column(DateTime, default=func.now())
 
-def get_database():
-    return mongodb.database
+# Resource Queue Table
+class ResourceQueue(Base):
+    __tablename__ = "resource_queue"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    resource_type = Column(String(10), nullable=False)  # 'domain', 'ip', 'hash'
+    resource_value = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=func.now())
+    processed = Column(Boolean, default=False)
+
+# Database connection
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://username:password@localhost/virustotal_db")
+
+engine = create_async_engine(DATABASE_URL)
+AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+async def init_db():
+    """Initialize database tables"""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    print("Database tables created successfully!")
+
+async def get_db():
+    """Get database session"""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
