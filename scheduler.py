@@ -19,7 +19,7 @@ class VirusTotalScheduler:
         self.queue_cron = os.getenv("QUEUE_CRON", "*/30 * * * * *")  # Every 30 seconds
 
     async def process_queue_items(self):
-        """Process all unprocessed items from the queue"""
+        """Process all unprocessed items from the queue CONCURRENTLY"""
         print(f"[{datetime.now()}] Starting queue processing...")
         
         async for session in get_db():
@@ -27,7 +27,7 @@ class VirusTotalScheduler:
                 # Get all unprocessed items from queue
                 stmt = select(ResourceQueue).where(
                     ResourceQueue.processed == False
-                ).order_by(ResourceQueue.created_at.asc())  # Process oldest first
+                ).order_by(ResourceQueue.created_at.asc())
                 
                 result = await session.execute(stmt)
                 queue_items = result.scalars().all()
@@ -38,54 +38,59 @@ class VirusTotalScheduler:
                 
                 print(f"Found {len(queue_items)} items to process in queue")
                 
+                # Process ALL items concurrently using asyncio.gather
+                tasks = []
                 for queue_item in queue_items:
-                    try:
-                        print(f"Processing {queue_item.resource_type}: {queue_item.resource_value}")
-                        
-                        # Process based on resource type
-                        if queue_item.resource_type == "domain":
-                            vt_data = self.vt_client.get_domain_report(queue_item.resource_value)
-                            if vt_data:
-                                await self.db_manager.store_domain_report(session, queue_item.resource_value, vt_data)
-                                print(f"✓ Processed domain: {queue_item.resource_value}")
-                            else:
-                                # Store null values if API call fails
-                                await self.db_manager.store_domain_report(session, queue_item.resource_value, {})
-                                print(f"✗ Failed to fetch domain: {queue_item.resource_value}")
-                        
-                        elif queue_item.resource_type == "ip":
-                            vt_data = self.vt_client.get_ip_report(queue_item.resource_value)
-                            if vt_data:
-                                await self.db_manager.store_ip_report(session, queue_item.resource_value, vt_data)
-                                print(f"✓ Processed IP: {queue_item.resource_value}")
-                            else:
-                                await self.db_manager.store_ip_report(session, queue_item.resource_value, {})
-                                print(f"✗ Failed to fetch IP: {queue_item.resource_value}")
-                        
-                        elif queue_item.resource_type == "hash":
-                            vt_data = self.vt_client.get_file_report(queue_item.resource_value)
-                            if vt_data:
-                                await self.db_manager.store_hash_report(session, queue_item.resource_value, vt_data)
-                                print(f"✓ Processed hash: {queue_item.resource_value}")
-                            else:
-                                await self.db_manager.store_hash_report(session, queue_item.resource_value, {})
-                                print(f"✗ Failed to fetch hash: {queue_item.resource_value}")
-                        
-                        # Mark as processed
-                        queue_item.processed = True
-                        queue_item.processed_at = datetime.now()
-                        await session.commit()
-                        print(f"✓ Marked as processed: {queue_item.resource_value}")
-                        
-                    except Exception as e:
-                        print(f"Error processing queue item {queue_item.resource_value}: {e}")
-                        # Continue with next item even if one fails
-                        continue
+                    task = self.process_single_item(session, queue_item)
+                    tasks.append(task)
                 
+                # ALL requests happen concurrently!
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Commit once after all processing
+                await session.commit()
                 print(f"Queue processing completed. Processed {len(queue_items)} items.")
                 
             except Exception as e:
                 print(f"Error in queue processing: {e}")
+
+    async def process_single_item(self, session, queue_item):
+        """Process a single queue item"""
+        try:
+            print(f"Processing {queue_item.resource_type}: {queue_item.resource_value}")
+            
+            vt_data = None
+            # Process based on resource type
+            if queue_item.resource_type == "domain":
+                vt_data = await self.vt_client.get_domain_report(queue_item.resource_value)
+                if vt_data:
+                    await self.db_manager.store_domain_report(session, queue_item.resource_value, vt_data)
+                else:
+                    await self.db_manager.store_domain_report(session, queue_item.resource_value, {})
+                    
+            elif queue_item.resource_type == "ip":
+                vt_data = await self.vt_client.get_ip_report(queue_item.resource_value)
+                if vt_data:
+                    await self.db_manager.store_ip_report(session, queue_item.resource_value, vt_data)
+                else:
+                    await self.db_manager.store_ip_report(session, queue_item.resource_value, {})
+                    
+            elif queue_item.resource_type == "hash":
+                vt_data = await self.vt_client.get_file_report(queue_item.resource_value)
+                if vt_data:
+                    await self.db_manager.store_hash_report(session, queue_item.resource_value, vt_data)
+                else:
+                    await self.db_manager.store_hash_report(session, queue_item.resource_value, {})
+            
+            # Mark as processed
+            queue_item.processed = True
+            queue_item.processed_at = datetime.now()
+            
+            success_msg = "✓" if vt_data else "✗"
+            print(f"{success_msg} Processed {queue_item.resource_type}: {queue_item.resource_value}")
+            
+        except Exception as e:
+            print(f"Error processing queue item {queue_item.resource_value}: {e}")
 
 
     def start_scheduler(self):
