@@ -1,116 +1,181 @@
-#  VirusTotal Data Pipeline
 
-A modern **FastAPI-based data pipeline** for querying and caching VirusTotal reports — built with **MongoDB** and **async Python** for high performance and scalability.
 
----
+#  VirusTotal Data Pipeline  
 
-## ⚙️ Core Components
-
-### **1. Database Layer (`database.py`)**
-**Technology:** MongoDB 
-
-- **Document-based storage** suits VirusTotal's nested JSON structure.
-- **Schema flexibility** supports evolving threat intelligence data.
-
-- **Compound index:** (`resource_id`, `resource_type`)  
-  → Enables fast lookups for cached reports.
+A **modern asynchronous data pipeline** built with **FastAPI**, **PostgreSQL**, and **APScheduler** to automatically fetch, and refresh **VirusTotal reports** for domains, IPs, and file hashes.  
 
 ---
 
-### **2. Data Management (`db_manager.py`)**
-Handles data caching and database interaction.
+##  Core Architecture
 
-- **Caching Strategy:** Simple “store and retrieve” without TTL (Time-To-Live)
-- **Update Logic:** Uses **UPSERT** operations  
-  → Updates if record exists, inserts if not
-- **Data Preservation:** Stores the complete VirusTotal response  
-  → Allows maximum flexibility for analytics or future enrichment
-
----
-
-### **3. API Client (`vt_client.py`)**
-Handles interaction with the **VirusTotal API**.
-
-
-#### 🔹 Error Handling
-- Graceful degradation if VirusTotal API is unavailable
-- Retries can be added later with exponential backoff
-
-#### 🔹 Supported Resources
-- Domains  
-- IP addresses  
-- File hashes
+| Component | Purpose | 
+|------------|----------|
+| **API Layer (`server.py`)** | Handles  API endpoints using FastAPI | 
+| **Database Layer (`database.py`)** | Manages PostgreSQL tables for reports and queue | 
+| **Data Manager (`db_manager.py`)** | Performs UPSERT operations (insert/update) for reports | 
+| **Scheduler (`scheduler.py`)** | Periodically processes unprocessed items in queue | 
+| **Entry Point (`main.py`)** | Initializes database and starts background scheduler | 
+| **Schemas (`schemas.py`)** | Defines request/response data models |
 
 ---
 
-### **4. Web Service (`main.py`)**
-**Framework:** FastAPI — chosen for async performance and built-in documentation.
+##  What This Pipeline Does  
 
+1. **Accepts VirusTotal resource requests (domain/IP/hash)** via FAST API.  
+2. **Checks the local PostgreSQL database** for  results.  
+3. If not found → **adds the item to a processing queue** (`resource_queue` table).  
+4. **Scheduler (`scheduler.py`)** periodically picks unprocessed queue items and calls the **VirusTotal API**.  
+5. **Results are parsed and stored** into structured tables (`domain_reports`, `ip_reports`, `hash_reports`).  
+6. Clients can later fetch cached data instantly from the API.  
 
 ---
 
-## ⚙️ Configuration
+##  Database Design
 
-### **Environment Variables (.env)**
+| Table | Description |
+|--------|--------------|
+| **domain_reports** | Stores VirusTotal stats for domains |
+| **ip_reports** | Stores VirusTotal stats for IP addresses |
+| **hash_reports** | Stores VirusTotal stats for file hashes |
+| **resource_queue** | Stores pending VirusTotal resources waiting for background processing |
+
+### ✅ Common Fields
+- `id`: UUID primary key  
+- `malicious`, `suspicious`, `undetected`, `harmless`: Counts from VirusTotal  
+- `created_at`: Timestamp when record was created  
+
+---
+
+##  Scheduler (Automated Background Processing)
+
+### 🔹 Purpose
+The scheduler continuously monitors the **`resource_queue`** table and fetches VirusTotal data for any **unprocessed** resources.
+
+### 🔹 How It Works
+1. Runs every **1 minute** (configurable via `.env` variable `QUEUE_CRON`).  
+2. Fetches all `processed == False` items from queue.  
+3. Calls the appropriate VirusTotal API (domain/IP/hash).  
+4. Stores the results in PostgreSQL via `DBManager`.  
+5. Marks each queue item as **processed**.
+
+### 🔹 Cron Expression
+```bash
+QUEUE_CRON=*/30 * * * * *   # every 30 seconds
+```
+
+You can change this to run every 5 minutes:
+```bash
+QUEUE_CRON=*/5 * * * *      # every 5 minutes
+```
+
+---
+
+## ⚙️ Environment Configuration (.env)
+
 | Variable | Description | Example |
 |-----------|--------------|----------|
-| `MONGODB_URL` | MongoDB connection string | `mongodb+srv://<user>:<pass>@cluster.mongodb.net` |
-| `DATABASE_NAME` | MongoDB database name | `Testdb` |
+| `DATABASE_URL` | PostgreSQL async connection string | `postgresql+asyncpg://username:password@localhost/virustotal_db` |
 | `VIRUSTOTAL_API_KEY` | VirusTotal API key | `your_api_key_here` |
+| `QUEUE_CRON` | Cron schedule for scheduler job | `*/30 * * * * *` |
 
 ---
 
+## 🚀 How to Run
 
-## 🚀 Features
+### **1️⃣ Clone the Repo**
+```bash
+git clone https://github.com/<your-username>/virustotal-data-pipeline.git
+cd virustotal-data-pipeline
+```
 
-### ✅ **Current Implementation**
-- **Multi-Resource Support:** Domains, IPs, and file hashes  
-- **Intelligent Caching:** Database-level caching to minimize VirusTotal API calls  
-- **RESTful API:** Clean and consistent endpoint structure  
-- **Automatic Documentation:** Available via Swagger UI (`/docs`)  
-- **Async Operations:** Non-blocking database and HTTP requests  
+### **2️⃣ Setup Environment**
+```bash
+python -m venv venv
+source venv/bin/activate       # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
 
-### 🌐 **Access API Documentation**
-Once the app is running:
-http://localhost:8000/docs
+Create a `.env` file:
+```bash
+DATABASE_URL=postgresql+asyncpg://postgres:1234@localhost/virustotal_db
+VIRUSTOTAL_API_KEY=your_api_key
+QUEUE_CRON=*/30 * * * * *
+```
 
-
----
-## 📡 API Endpoints
-
-| **Method** | **Endpoint** | **Description** |
-|-------------|--------------|-----------------|
-| **GET** | `/` | Service health check |
-| **GET** | `/report` | Get analysis report (uses cache) |
-| **GET** | `/refresh` | Force refresh report (bypass cache) |
-| **GET** | `/reports` | List all stored reports |
-
----
-
-
-##  Current Limitations
-
-### **1. Caching Strategy**
-- ❌ No TTL (Time-to-Live) or auto-expiration  
-- 🔁 Manual refresh required via `/refresh` endpoint  
-- 📈 Storage may grow indefinitely (no cleanup mechanism yet)
-
-### **2. Checkpoint Mechanism**
-- Not implemented yet
-- Justification:
-  - Pipeline is **on-demand**, not continuous  
-  - Each API request is **independent and idempotent**
-
+### **3️⃣ Initialize Database**
+```bash
+python main.py
+```
+This:
+- Creates all tables
+- Starts the background scheduler that processes queued VirusTotal resources  
 
 ---
 
-## 💡 Possible Enhancements
+##  API Endpoints
 
-| Enhancement | Description |
-|--------------|--------------|
-|  **TTL-based Caching** | Automatically expire stale data |
-|  **Data Optimization** | Extract only relevant VirusTotal fields |
-|  **Refresh Logic** | When the `/refresh` endpoint is called, delete existing domain/IP/hash data (if present) before fetching fresh data |
-|**Retry Mechanism**| Retries can be added  with exponential backoff|
+| Method | Endpoint | Description |
+|---------|-----------|-------------|
+| **GET** | `/` | Health check |
+| **GET** | `/report` | Get  report (or queue if not found) |
+| **POST** | `/queue` | Manually add resource to processing queue |
+| **GET** | `/refresh` | Force refresh and fetch from VirusTotal |
+| **GET** | `/reports` | Get all stored reports (paginated) |
 
+### Example Request
+```json
+{
+  "resource_type": "domain",
+  "value": "example.com"
+}
+```
+
+---
+
+##  Data Flow Summary
+
+```
+           ┌────────────┐
+           │  Client    │
+           └──────┬─────┘
+                  │  (API Request)
+                  ▼
+           ┌────────────┐
+           │ FastAPI     │──▶ Check DB
+           └────────────┘
+                  │
+      ┌───────────┴───────────┐
+      ▼                       ▼
+ [Found in DB]         [Not Found]
+   Return report     Add to Resource Queue
+                          │
+                          ▼
+                  ┌────────────────┐
+                  │ APScheduler Job│
+                  │(Every 60 sec)  │
+                  └──────┬─────────┘
+                         ▼
+               Fetch VirusTotal API
+                         │
+                         ▼
+                  Store in PostgreSQL
+```
+
+---
+
+##  Possible Future Enhancements
+
+| Feature | Description |
+|----------|--------------|
+| **TTL-based caching** | Auto-expire old data |
+| **Retry mechanism** | Exponential backoff for API failures |
+| **Web UI** | Admin panel for monitoring reports and queue |
+
+---
+
+##  Why This Design Works
+
+✅ **Async-first design** — handles I/O (DB & API) concurrently  
+✅ **Resilient** — uses queue-based recovery for failed/missing data  
+✅ **Developer-friendly** — automatic docs & strong typing  
 
