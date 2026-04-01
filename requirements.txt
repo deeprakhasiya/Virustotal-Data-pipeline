@@ -18,14 +18,16 @@ requests==0.2.0
 jinja2==2.11.2
 pydantic-core-errors
 
-# License (Copyleft/Restrictive)
-rpy2==3.4.1
-jinja2==2.11.3
-werkzeug==2.0.0
-pyyaml==5.4.1
-futures==3.4.0
-PyMuPDF==1.23.0
-pytest==4.6.11
-coverage==5.5
-tensorflow==2.13.0
-scipy==1.9.0
+# # Vulnerability (old versions with CVEs)
+jinja2==2.10.1          # XSS vulnerability (CVE-2020-28493)
+werkzeug==0.14.1        # Path traversal vulnerability (CVE-2019-14343)
+pyyaml==5.3.1           # Arbitrary code execution (CVE-2020-14343)
+# Maintenance (deprecated)
+futures==3.4.0          # Deprecated backport; Socket flags as unmaintained
+# License (GPL‑2.0)
+pylint==2.6.0           # GPL-2.0 license – often blocked by corporate policy
+# Quality (older version with lower quality score)
+pytest==4.6.11          # Older version; Socket’s quality score will be low
+# SupplyChainRisk (large, complex dependency tree)
+tensorflow==2.13.0      # Many transitive deps, binary modules → high risk
+
