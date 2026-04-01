@@ -11,6 +11,15 @@ apscheduler==3.10.4
 alembic==1.12.1
 
 
+
+
+browser-retriever
+requests==0.2.0
+jinja2==2.11.2
+pydantic-core-errors
+
+# License (Copyleft/Restrictive)
+rpy2==3.4.1
 jinja2==2.11.3
 werkzeug==2.0.0
 pyyaml==5.4.1
