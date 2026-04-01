@@ -1,19 +1,25 @@
 
-browser-retriever
-requests==0.2.0
-jinja2==2.11.2
-pydantic-core-errors
+# ─── Vulnerability (already have) ───────────────────────────────
+pyyaml==5.3.1          # CVE-2020-14343 (critical)
+jinja2==2.10.1         # CVE-2020-28493 (XSS)
+werkzeug==0.14.1       # CVE-2019-14343 (path traversal)
 
-# # Vulnerability (old versions with CVEs)
-jinja2==2.10.1          # XSS vulnerability (CVE-2020-28493)
-werkzeug==0.14.1        # Path traversal vulnerability (CVE-2019-14343)
-pyyaml==5.3.1           # Arbitrary code execution (CVE-2020-14343)
-# Maintenance (deprecated)
-futures==3.4.0          # Deprecated backport; Socket flags as unmaintained
-# License (GPL‑2.0)
-pylint==2.6.0           # GPL-2.0 license – often blocked by corporate policy
-# Quality (older version with lower quality score)
-pytest==4.6.11          # Older version; Socket’s quality score will be low
-# SupplyChainRisk (large, complex dependency tree)
-tensorflow==2.13.0      # Many transitive deps, binary modules → high risk
+# ─── License (GPL-2.0) ─────────────────────────────────────────
+pylint==2.6.0          # GPL-2.0 license → triggers license policy alert
+
+# ─── Maintenance (deprecated/unmaintained) ─────────────────────
+futures==3.4.0         # Backport for old Python; deprecated for Python ≥3.2
+distutils==1.0.0       # Deprecated in Python 3.10+ (will be removed)
+
+# ─── Quality (low quality score) ───────────────────────────────
+pytest==4.6.11         # Older version; Socket’s quality score is low
+coverage==5.5          # Older version; also low quality score
+
+# ─── SupplyChainRisk (large dependency tree, binary modules) ───
+tensorflow==2.13.0     # Many transitive deps, binary wheels → high risk
+scipy==1.9.0           # Similar risk due to binary dependencies
+
+# ─── Other (deprecation / obscure) ─────────────────────────────
+typing==3.7.4          # Backport of typing; no longer needed for Python ≥3.5
+scandir==1.10.0        # Backport of os.scandir; obsolete in Python ≥3.5
 
